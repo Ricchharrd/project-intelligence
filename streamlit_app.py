@@ -68,7 +68,7 @@ except Exception:
 
 with st.sidebar:
     st.markdown("## 해외 사업 현황")
-    page = st.radio("메뉴", ["대시보드", "브리핑 선택", "사업·기사 관리"], label_visibility="collapsed")
+    page = st.radio("메뉴", ["대시보드", "뉴스 기사 선택", "사업·기사 관리"], label_visibility="collapsed")
 
 
 projects = projects_frame(engine)
@@ -199,42 +199,49 @@ if page == "대시보드":
                 st.caption(f"{clean(item['project_name'])} — {clean(item['country'])}")
             render_news_card(item)
 
-elif page == "브리핑 선택":
-    header("CEO 브리핑 선택", "브리핑에 넣을 기사만 선택하고 CEO 장표용 CSV로 내려받습니다.")
+elif page == "뉴스 기사 선택":
+    header("뉴스 기사 선택", "기사를 선택 후 CSV 형태로 다운로드 받습니다")
     edit = news[["id","approved","project_name","title","published_at","source_quality","severity"]].copy()
     edit["approved"] = edit["approved"].astype(bool)
-    edited = st.data_editor(edit, hide_index=True, width="stretch", disabled=["id","project_name","title","published_at","source_quality","severity"], column_config={"approved": st.column_config.CheckboxColumn("브리핑")})
+    edited = st.data_editor(edit, hide_index=True, width="stretch", disabled=["id","project_name","title","published_at","source_quality","severity"], column_config={
+        "id": None, "approved": st.column_config.CheckboxColumn("선택"),
+        "project_name": "사업명", "title": "기사 제목", "published_at": "발행일",
+        "source_quality": "출처 신뢰도", "severity": "중요도",
+    })
     if st.button("선택 상태 저장", type="primary"):
         save_approvals(engine, {int(row.id): bool(row.approved) for row in edited.itertuples()})
-        st.success("브리핑 선택을 저장했습니다.")
+        st.success("기사 선택을 저장했습니다.")
         st.rerun()
     chosen = edited[edited["approved"]]
     if not chosen.empty:
         export = news[news["id"].isin(chosen["id"])][["project_name","country","published_at","topic","severity","source_quality","title","summary","source_name","source_url","context"]]
-        st.download_button("선택 뉴스 CSV 다운로드", export.to_csv(index=False).encode("utf-8-sig"), f"CEO_PPP_Briefing_{now_kst().date()}.csv", "text/csv")
+        st.download_button("선택 뉴스 CSV 다운로드", export.to_csv(index=False).encode("utf-8-sig"), f"News_Articles_{now_kst().date()}.csv", "text/csv")
 
 elif page == "사업·기사 관리":
     header("사업·기사 관리", "웹에서 관심 사업과 공개 뉴스 항목을 추가하거나 수정합니다.")
     project_tab, news_tab = st.tabs(["관심 사업", "기사 등록·수정"])
     with project_tab:
-        st.dataframe(projects[["id","name","country","active","news_count"]], hide_index=True, width="stretch")
-        choices = ["새 사업 추가", *projects.apply(lambda r: f"{r['id']} · {r['name']}", axis=1).tolist()]
-        choice = st.selectbox("편집 대상", choices)
-        current = None if choice == "새 사업 추가" else projects[projects["id"] == int(choice.split(" · ")[0])].iloc[0]
+        display_projects = projects[["name","country","active","news_count"]].copy()
+        display_projects["active"] = display_projects["active"].map({1: "관리 중", 0: "관리 중지"})
+        display_projects.columns = ["사업명", "국가", "관리 상태", "기사 수"]
+        st.dataframe(display_projects, hide_index=True, width="stretch")
+        project_labels = {int(r['id']): f"{r['name']} — {r['country']}" for _, r in projects.iterrows()}
+        choice = st.selectbox("편집 대상", [None, *project_labels], format_func=lambda key: "새 사업 추가" if key is None else project_labels[key])
+        current = None if choice is None else projects[projects["id"] == choice].iloc[0]
         with st.form("project_form"):
             name = st.text_input("사업명", "" if current is None else current["name"])
             country = st.text_input("국가", "" if current is None else current["country"])
             aliases = st.text_input("검색 별칭", "" if current is None else current["aliases"])
-            active = st.checkbox("활성", True if current is None else bool(current["active"]))
+            active = st.checkbox("관리 대상에 포함", True if current is None else bool(current["active"]))
             if st.form_submit_button("사업 저장", type="primary"):
                 if not name.strip() or not country.strip(): st.error("사업명과 국가를 입력해 주세요.")
                 else:
                     save_project(engine, {"name":name.strip(),"country":country.strip(),"aliases":aliases.strip(),"active":1 if active else 0}, None if current is None else int(current["id"]))
                     st.success("사업을 저장했습니다."); st.rerun()
     with news_tab:
-        news_choices = ["새 기사 등록", *news.apply(lambda r: f"{r['id']} · {r['title']}", axis=1).tolist()]
-        news_choice = st.selectbox("기사 선택", news_choices)
-        current_news = None if news_choice == "새 기사 등록" else news[news["id"] == int(news_choice.split(" · ")[0])].iloc[0]
+        news_labels = {int(r['id']): f"{r['title']} · {r['project_name']} · {r['published_at']}" for _, r in news.iterrows()}
+        news_choice = st.selectbox("기사 선택", [None, *news_labels], format_func=lambda key: "새 기사 등록" if key is None else news_labels[key])
+        current_news = None if news_choice is None else news[news["id"] == news_choice].iloc[0]
         project_index = 0 if current_news is None else projects[projects["id"] == int(current_news["project_id"])].index[0]
         with st.form("news_form"):
             selected_idx = st.selectbox("사업", range(len(projects)), index=int(project_index), format_func=lambda i: f"{projects.iloc[i]['country']} · {projects.iloc[i]['name']}")
