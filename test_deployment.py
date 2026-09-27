@@ -46,6 +46,18 @@ class DeploymentTests(unittest.TestCase):
             self.assertTrue(any(b.label == '업데이트' for b in app.button))
             self.assertTrue(any('토큰이 소모되니' in c.value for c in app.caption))
             self.assertFalse(any('판단 맥락과 원문' in e.label for e in app.expander))
+            self.assertEqual(len(app.sidebar.date_input), 0)
+            stored = news_frame(engine)
+            expected = stored[stored['severity'].isin(['Critical', 'Material'])]
+            headlines = [s.value for s in app.subheader]
+            self.assertTrue(all(title in headlines for title in expected['title']))
+            self.assertFalse(any(title in headlines for title in stored[stored['severity'] == 'Watch']['title']))
+            # Selecting a project shows its Watch articles as well, and no other projects.
+            watched = stored[stored['severity'] == 'Watch'].iloc[0]
+            app.selectbox[0].select(f"{watched['project_name']} — {watched['country']}").run()
+            headlines = [s.value for s in app.subheader]
+            self.assertIn(watched['title'], headlines)
+            self.assertFalse(any(title in headlines for title in stored[stored['project_id'] != watched['project_id']]['title']))
             for page in ['브리핑 선택', '사업·기사 관리']:
                 app.sidebar.radio[0].set_value(page).run(timeout=30)
                 self.assertFalse(app.exception, page)
@@ -83,10 +95,26 @@ class DeploymentTests(unittest.TestCase):
                 self.assertFalse(any('<p>' in t.value for t in app.text))
                 app.selectbox[0].select_index(1).run()
                 next(b for b in app.button if b.label == '업데이트').click().run(timeout=30)
+                self.assertEqual(updater.call_count, 0)
+                next(b for b in app.button if b.label == '확인 후 실행').click().run(timeout=30)
                 self.assertFalse(app.exception)
                 self.assertEqual(updater.call_count, 1)
+                self.assertTrue(next(b for b in app.button if b.label == '업데이트').disabled)
                 import streamlit as st
                 st.cache_resource.clear()
+            engine.dispose()
+
+    def test_shared_hourly_gate(self):
+        from storage import claim_manual_update, manual_update_remaining
+        from concurrent.futures import ThreadPoolExecutor
+        with TemporaryDirectory() as folder:
+            engine, _ = create_database(f"sqlite:///{Path(folder) / 'gate.db'}")
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results = list(pool.map(lambda _: claim_manual_update(engine, 10000), range(2)))
+            self.assertEqual(sum(results), 1)
+            self.assertFalse(claim_manual_update(engine, 13599))
+            self.assertEqual(manual_update_remaining(engine, 13599), 1)
+            self.assertTrue(claim_manual_update(engine, 13600))
             engine.dispose()
 
 

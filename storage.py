@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+import time
 
 import pandas as pd
 from sqlalchemy import create_engine, text
@@ -56,6 +57,11 @@ def bootstrap(engine: Engine) -> None:
             )
         """))
         count = conn.execute(text("SELECT COUNT(*) FROM projects")).scalar_one()
+        conn.execute(text('''CREATE TABLE IF NOT EXISTS manual_update_gate (
+            id INTEGER PRIMARY KEY, started_at DOUBLE PRECISION NOT NULL
+        )'''))
+        conn.execute(text('''INSERT INTO manual_update_gate (id, started_at) VALUES (1, 0)
+            ON CONFLICT (id) DO NOTHING'''))
         conn.execute(text('''CREATE TABLE IF NOT EXISTS daily_runs (
             run_date TEXT NOT NULL, project_id INTEGER NOT NULL,
             status TEXT NOT NULL, finished_at TEXT NOT NULL DEFAULT '',
@@ -128,3 +134,19 @@ def save_approvals(engine: Engine, approvals: dict[int, bool]) -> None:
         conn.execute(text("UPDATE news_items SET approved=:approved WHERE id=:id"), [
             {"id": item_id, "approved": 1 if approved else 0} for item_id, approved in approvals.items()
         ])
+
+
+def manual_update_remaining(engine: Engine, now: float | None = None) -> int:
+    now = time.time() if now is None else now
+    with engine.connect() as conn:
+        started = conn.execute(text("SELECT started_at FROM manual_update_gate WHERE id=1")).scalar_one()
+    return max(0, int(started + 3600 - now + 0.999))
+
+
+def claim_manual_update(engine: Engine, now: float | None = None) -> bool:
+    """One atomic claim shared by every user and app instance using this DB."""
+    now = time.time() if now is None else now
+    with engine.begin() as conn:
+        result = conn.execute(text('''UPDATE manual_update_gate SET started_at=:now
+            WHERE id=1 AND started_at <= :cutoff'''), {'now': now, 'cutoff': now - 3600})
+        return result.rowcount == 1

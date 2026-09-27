@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 import os
 from html import unescape
 from html.parser import HTMLParser
@@ -14,6 +14,7 @@ from openai import AuthenticationError, RateLimitError, APIConnectionError, APIS
 
 from ai_pipeline import collect_update
 from storage import create_database, news_frame, projects_frame, save_approvals, save_news, save_project
+from storage import manual_update_remaining, claim_manual_update
 
 
 st.set_page_config(page_title="CEO Project Intelligence", page_icon="📡", layout="wide", initial_sidebar_state="expanded")
@@ -67,18 +68,10 @@ except Exception:
 with st.sidebar:
     st.markdown("## 해외 사업 현황")
     page = st.radio("메뉴", ["대시보드", "브리핑 선택", "사업·기사 관리"], label_visibility="collapsed")
-    st.divider()
-    report_start = st.date_input("조회 시작일", now_kst().date().replace(day=1))
-    report_end = st.date_input("조회 종료일", now_kst().date())
 
 
 projects = projects_frame(engine)
 news = news_frame(engine)
-if report_start > report_end:
-    st.error("조회 시작일은 종료일보다 늦을 수 없습니다.")
-    st.stop()
-september = news[news["published_at"].between(report_start.isoformat(), report_end.isoformat())].copy()
-period_label = f"{report_start:%Y.%m.%d} ~ {report_end:%Y.%m.%d}"
 
 
 class PlainText(HTMLParser):
@@ -117,25 +110,50 @@ def render_news_card(row) -> None:
 
 
 if page == "대시보드":
-    header("대시보드", f"해외 사업 현황 · {period_label}")
+    header("대시보드", "주요 업데이트를 확인하거나 사업을 선택하세요.")
     active = projects[projects["active"] == 1]
-    options = {"전체 사업": None}
+    options = {"전체 사업 · 주요 업데이트": None}
     options.update({f"{r['name']} — {r['country']}": int(r['id']) for _, r in active.iterrows()})
-    left, right = st.columns([4, 1])
+    left, right = st.columns([4, 1], vertical_alignment="bottom")
     selected = left.selectbox("사업", list(options))
     selected_id = options[selected]
     api_key, model = secret("OPENAI_API_KEY"), secret("OPENAI_MODEL")
     st.caption("토큰이 소모되니 필요할 때만 업데이트 하십시오")
-    update = right.button("업데이트", type="primary", disabled=not(api_key and model))
+    remaining = manual_update_remaining(engine)
+    update = right.button("업데이트", type="primary", width="stretch", disabled=not(api_key and model) or remaining > 0 or active.empty)
+    if remaining:
+        st.caption(f"다른 사용자의 실행을 포함해 업데이트는 1시간에 한 번 가능합니다. 약 {(remaining + 59) // 60}분 후 다시 실행할 수 있습니다.")
+        if st.button("실행 가능 시간 확인"):
+            st.rerun()
     if not api_key or not model:
         st.caption("업데이트 연결을 준비 중입니다.")
     if update:
+        st.session_state["confirm_update"] = selected
+    if st.session_state.get("confirm_update") != selected or remaining:
+        st.session_state.pop("confirm_update", None)
+    confirmed = False
+    if st.session_state.get("confirm_update"):
+        with st.container(border=True):
+            st.write(f"{selected} 업데이트를 실행하시겠습니까?")
+            st.caption("토큰이 소모되니 필요할 때만 업데이트 하십시오")
+            st.caption("최근 7일의 기사를 검색합니다. 실행 후에는 모든 사용자의 업데이트가 1시간 동안 제한됩니다.")
+            yes, no = st.columns(2)
+            confirmed = yes.button("확인 후 실행", type="primary")
+            if no.button("취소"):
+                st.session_state.pop("confirm_update", None)
+                st.rerun()
+    if confirmed:
+        st.session_state.pop("confirm_update", None)
+        if not claim_manual_update(engine):
+            st.session_state["update_results"] = ["다른 사용자가 먼저 업데이트를 실행했습니다. 1시간 후 다시 시도해 주세요."]
+            st.rerun()
         targets = active if selected_id is None else active[active["id"] == selected_id]
         results = []
         progress = st.progress(0, text="기사를 확인하고 있습니다.")
         for i, project in enumerate(targets.to_dict("records")):
             try:
-                result = update_project(engine, project, api_key, model, report_start, min(report_end, now_kst().date()))
+                today = now_kst().date()
+                result = update_project(engine, project, api_key, model, today - timedelta(days=6), today)
             except AuthenticationError:
                 result = "연결 인증에 실패했습니다."
             except RateLimitError:
@@ -151,25 +169,28 @@ if page == "대시보드":
             st.text(result)
     quality_filter = st.selectbox("출처 신뢰도", ["전체", "높음", "보통", "낮음"])
     quality_value = {"높음": "High", "보통": "Medium", "낮음": "Low"}.get(quality_filter)
-    shown = active if selected_id is None else active[active["id"] == selected_id]
-    st.caption(f"{len(shown)}개 사업")
-    for _, project in shown.iterrows():
-        articles = september[september["project_id"] == project["id"]]
-        if quality_value:
-            articles = articles[articles["source_quality"] == quality_value]
+    articles = news[news["project_id"].isin(active["id"])]
+    if selected_id is None:
+        articles = articles[articles["severity"].isin(["Critical", "Material"])]
+        st.subheader("주요 업데이트")
+        st.caption("전체 사업의 중요·긴급 소식 · 최신순")
+    else:
+        articles = articles[articles["project_id"] == selected_id]
+        st.subheader(clean(selected))
+        st.caption("이 사업의 전체 소식 · 최신순")
+    if quality_value:
+        articles = articles[articles["source_quality"] == quality_value]
+    if articles.empty:
+        st.info("등록된 주요 업데이트가 없습니다." if selected_id is None else "이 사업에 등록된 기사가 없습니다.")
+    for _, item in articles.iterrows():
         with st.container(border=True):
-            st.markdown(f"### {clean(project['name'])} — {clean(project['country'])}")
-            if articles.empty:
-                st.caption("조회 기간에 등록된 기사가 없습니다." if not quality_value else "선택한 출처 등급의 기사가 없습니다.")
-            else:
-                for _, item in articles.iterrows():
-                    render_news_card(item)
-                    if item["id"] != articles.iloc[-1]["id"]:
-                        st.divider()
+            if selected_id is None:
+                st.caption(f"{clean(item['project_name'])} — {clean(item['country'])}")
+            render_news_card(item)
 
 elif page == "브리핑 선택":
     header("CEO 브리핑 선택", "브리핑에 넣을 기사만 선택하고 CEO 장표용 CSV로 내려받습니다.")
-    edit = september[["id","approved","project_name","title","published_at","source_quality","severity"]].copy()
+    edit = news[["id","approved","project_name","title","published_at","source_quality","severity"]].copy()
     edit["approved"] = edit["approved"].astype(bool)
     edited = st.data_editor(edit, hide_index=True, width="stretch", disabled=["id","project_name","title","published_at","source_quality","severity"], column_config={"approved": st.column_config.CheckboxColumn("브리핑")})
     if st.button("선택 상태 저장", type="primary"):
@@ -178,8 +199,8 @@ elif page == "브리핑 선택":
         st.rerun()
     chosen = edited[edited["approved"]]
     if not chosen.empty:
-        export = september[september["id"].isin(chosen["id"])][["project_name","country","published_at","topic","severity","source_quality","title","summary","source_name","source_url","context"]]
-        st.download_button("선택 뉴스 CSV 다운로드", export.to_csv(index=False).encode("utf-8-sig"), f"CEO_PPP_Briefing_{report_start}_{report_end}.csv", "text/csv")
+        export = news[news["id"].isin(chosen["id"])][["project_name","country","published_at","topic","severity","source_quality","title","summary","source_name","source_url","context"]]
+        st.download_button("선택 뉴스 CSV 다운로드", export.to_csv(index=False).encode("utf-8-sig"), f"CEO_PPP_Briefing_{now_kst().date()}.csv", "text/csv")
 
 elif page == "사업·기사 관리":
     header("사업·기사 관리", "웹에서 관심 사업과 공개 뉴스 항목을 추가하거나 수정합니다.")
