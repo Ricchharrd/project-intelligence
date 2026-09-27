@@ -1,0 +1,31 @@
+PROJECTS = [
+    (1001, "Phuoc Hoa 양수발전", "베트남"),
+    (1002, "이즈미르 외곽 고속도로", "튀르키예"),
+    (1003, "High-Speed Rail (고속철도)", "체코"),
+    (1004, "카이로 공항", "이집트"),
+    (1005, "리마 메트로 3·4호선", "페루"),
+    (1006, "친체로 공항", "페루"),
+    (1007, "New Cross River Road (3rd link)", "캐나다"),
+    (1008, "자카르타 MRT-4", "인도네시아"),
+    (1009, "이스탄불–앙카라 Super Speed Rail", "튀르키예"),
+    (1010, "The Hospital for Sick Children 재개발", "캐나다"),
+    (1011, "St. Joseph’s Health Centre 재개발", "캐나다"),
+    (1012, "Northland Corridor Section 2", "뉴질랜드"),
+    (1013, "Waitemata Harbour Crossing", "뉴질랜드"),
+    (1014, "마쓰야마 공항", "일본"),
+    (1015, "엘도라도 공항", "콜롬비아"),
+    (1016, "다바오 공항 민영화", "필리핀"),
+    (1017, "도로 민영화 (보스포러스 1·2교)", "튀르키예"),
+]
+
+NEWS = [
+    (2101,1012,"NZTA, Northland Corridor 투자검토 자료 순차 공개","NZTA가 Northland Corridor 투자검토 관련 부속 자료를 9월 1일부터 11일까지 순차 공개했다. 9월 11일에는 Strategic Case가 게시돼 사업 필요성과 회랑 판단의 근거가 보강됐다.","NZ Transport Agency Waka Kotahi","https://www.nzta.govt.nz/projects/northland-corridor/publications","2026-09-11","2026-09-11","계획·인허가","정부·발주처 공식","High","Material","자료 공개는 사업 근거가 구체화됐다는 신호다. 공사 발주 또는 재원 확정으로 해석하지 않는다."),
+    (2102,1013,"Waitematā Crossing 검토 쟁점과 불확실성 재조명","Greater Auckland가 공개정보 자료를 바탕으로 전략적 필요성, 시장 조건과 거버넌스에 추가 설명이 필요하다는 검토 의견을 소개했다. 교량·터널 선호안은 아직 확정된 공개 사실로 보기 어렵다.","Greater Auckland","https://www.greaterauckland.org.nz/2026/09/11/weekly-roundup-11-september-2026/","2026-09-11","2026-09-11","계획·인허가","지역·전문 매체","Low","Watch","지역 교통 전문 매체의 해설이다. 정부 의사결정이나 조달방식 확정의 근거로 단독 사용하지 않는다."),
+    (2103,1004,"이집트, 공항 운영 민간위탁 기간 최대 30년 검토","이집트 정부가 공항 운영·관리의 민간 참여 확대 방향을 제시했다. 카이로 공항의 높은 여객 비중이 함께 언급돼 향후 운영모델과 민간 역할 변화 가능성을 주시할 필요가 있다.","Ahram Online","https://english.ahram.org.eg/NewsContent/1/1235/577081/Egypt/Urban--Transport/Egypt-to-outsource-airport-management-to-private-s.aspx","2026-09-20","2026-09-20","입찰·계약","전국·산업 매체","Medium","Material","공항 전반의 정책 방향 보도이며 카이로 공항 단독 계약 공고가 아니다."),
+    (2104,1006,"페루·한국, 친체로 공항 관련 교통 협력 의지 재확인","페루와 한국이 교통 인프라 협력을 논의하며 친체로 공항에 대한 협력 의지를 재확인했다. 기사에는 연간 700만~1,200만 명의 잠재 처리능력과 보완공사 필요성이 언급됐다.","DataPortuaria","https://dataportuaria.com/en/peru/logistics/peru-and-south-korea-agree-on-cooperation-in-transport-and-i","2026-09-10","2026-09-10","공사·운영","전국·산업 매체","Medium","Watch","협력 의지에 관한 산업매체 보도다. 공정률, 준공일 또는 추가 계약 확정으로 해석하지 않는다."),
+    (2105,1011,"St. Joseph’s 재개발 공식 페이지 9월 갱신","Unity Health Toronto가 재개발 공식 페이지를 9월 3일 갱신했다. 사업은 Stage 2로 안내되며, 계획상 5년 공사는 2028년 시작 예정으로 제시된다.","Unity Health Toronto","https://unityhealth.to/about-unity-health/redevelopment/","2026-09-03","2026-09-03","계획·인허가","정부·발주처 공식","High","Watch","공식 페이지의 현행 계획이다. 2028년 착공은 확정 실적이 아닌 예정 일정이다."),
+    (2106,1014,"마쓰야마 공항 구내도로 9월 30일 전환 공지","에히메현이 마쓰야마 공항 구내도로를 9월 30일 전환한다고 공지했다. 현장 동선 변경에 관한 운영·공사 단계의 공식 업데이트다.","에히메현","https://www.pref.ehime.jp/soshiki/28/index-2.html","2026-09-17","2026-09-30","공사·운영","정부·발주처 공식","High","Watch","공항 운영 현장의 변경사항이며 별도 민영화 또는 대규모 개발계약을 의미하지 않는다."),
+    (2107,1016,"다바오 포함 3개 공항 PPP, Swiss challenge 준비 단계","다바오·비콜·시아르가오 공항 패키지 제안이 관계기관 심사를 거쳐 2027년 1분기 Swiss challenge를 목표로 준비 중이라고 보도됐다. 제안 금액은 216억4천만 페소로 제시됐다.","Manila Bulletin / TFA","https://tfa.ph/property_news/gokongwei-gotianun-face-swiss-challenge-for-%E2%82%B121-billion-regional-airport-deal/","2026-09-14","2026-09-14","입찰·계약","전국·산업 매체","Medium","Material","언론 보도 기준의 목표 일정이다. 내각급 승인 및 경쟁절차 개시는 아직 완료되지 않았다."),
+    (2108,1015,"엘도라도 공항, 2026년 상반기 여객 1,120만 명","엘도라도 공항은 2026년 상반기 8만9,707편과 여객 1,120만 명을 기록했다. 7~9월 직항편 공급도 전년 동기 대비 증가해 운영수요의 강도를 보여준다.","Aviacionline","https://www.aviacionline.com/english/commercial-aviation/latin-america-and-caribbean/colombia/bogota-s-el-dorado-airport-records-89-707-flights-and-11-2-million-passengers-in-first-half-of-2026_a6a9f5bd730b2041eb7158cc3","2026-09-07","2026-09-07","공사·운영","전국·산업 매체","Medium","Watch","수요·운영 지표 기사이며 신규 양허계약 또는 증설 발주를 의미하지 않는다."),
+    (2109,1017,"튀르키예, 보스포러스 교량·고속도로 30년 운영권 이전 추진","튀르키예가 보스포러스 1·2교와 고속도로의 운영권을 최대 30년간 민간에 이전하는 계획을 추진한다고 보도됐다. 자산 소유권은 국가에 남고 자산별 또는 묶음 방식이 검토된다.","Hürriyet Daily News","https://www.hurriyetdailynews.com/turkiye-plans-30-year-privatization-of-bosphorus-bridges-highways-226499","2026-09-06","2026-09-06","입찰·계약","전국·산업 매체","Medium","Critical","정부 승인 보도는 거래 종결이 아니다. 패키징, 입찰조건과 실제 일정은 후속 공식문서 확인이 필요하다."),
+]
