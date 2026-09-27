@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
 from openai import OpenAI
@@ -46,7 +46,7 @@ def validate_candidate(candidate: dict, start_date: date, end_date: date, source
 
 
 def collect_update(*, api_key: str, model: str, project_name: str, country: str, start_date: date, end_date: date, aliases: str = "") -> dict:
-    if start_date > end_date or end_date > date.today():
+    if start_date > end_date or end_date > datetime.now(timezone(timedelta(hours=9))).date():
         raise ValueError("시작일과 종료일을 확인해 주세요. 미래 날짜는 검색할 수 없습니다.")
     client = OpenAI(api_key=api_key, timeout=90.0, max_retries=1)
     instructions = """당신은 해외 PPP 사업의 공개정보 검증 담당자다. 정부·발주처·규제기관·기업 공시를 우선하고, 해당 사업과 직접 관련된 원문만 선택한다. 날짜 범위를 벗어나거나 사업과 간접적으로만 관련된 기사는 채택하지 않는다. 출처 품질은 정부·발주처 공식/기업 공시=High, 전국·산업 매체=Medium, 지역·전문 매체=Low로 분류한다. 찾지 못하면 found=false로 답한다. 사실과 추론을 구분하고 한국어로 간결하게 작성한다."""

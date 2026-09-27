@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from datetime import date
 import os
-from html import escape
+from html import unescape
+from html.parser import HTMLParser
+from update_jobs import now_kst, update_project
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -63,15 +65,11 @@ except Exception:
     st.stop()
 
 with st.sidebar:
-    st.markdown("## 📡 해외 PPP\n**뉴스 인텔리전스**")
-    page = st.radio("메뉴", ["경영진 대시보드", "브리핑 선택", "사업·기사 관리", "AI 업데이트", "서비스 구조"], label_visibility="collapsed")
+    st.markdown("## 해외 사업 현황")
+    page = st.radio("메뉴", ["대시보드", "브리핑 선택", "사업·기사 관리"], label_visibility="collapsed")
     st.divider()
-    report_start = st.date_input("조회 시작일", date.today().replace(day=1))
-    report_end = st.date_input("조회 종료일", date.today())
-    if persistent:
-        st.success("영구 DB 연결")
-    else:
-        st.warning("로컬 DB 모드")
+    report_start = st.date_input("조회 시작일", now_kst().date().replace(day=1))
+    report_end = st.date_input("조회 종료일", now_kst().date())
 
 
 projects = projects_frame(engine)
@@ -83,57 +81,91 @@ september = news[news["published_at"].between(report_start.isoformat(), report_e
 period_label = f"{report_start:%Y.%m.%d} ~ {report_end:%Y.%m.%d}"
 
 
+class PlainText(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.parts = []
+
+    def handle_data(self, data):
+        self.parts.append(data)
+
+
+def clean(value):
+    parser = PlainText()
+    parser.feed(unescape(str(value or "")))
+    return "".join(parser.parts).strip()
+
+
 def header(title: str, subtitle: str) -> None:
-    st.markdown(f'<section class="hero"><div class="eyebrow">PROJECT MARKET INTELLIGENCE</div><h1>{title}</h1><p>{subtitle}</p></section>', unsafe_allow_html=True)
+    st.title(title)
+    st.caption(subtitle)
 
 
-def source_badge(quality: str, source_type: str) -> str:
-    return f'<span class="badge {quality.lower()}">{quality} · {source_type}</span>'
+def render_news_card(row) -> None:
+    st.subheader(clean(row["title"]))
+    st.text(clean(row["summary"]))
+    st.caption(" · ".join(clean(row[k]) for k in ["country", "source_name", "topic"]))
+    if clean(row.get("context", "")):
+        st.text(clean(row["context"]))
+    quality = {"High": "높음", "Medium": "보통", "Low": "낮음"}.get(row["source_quality"], row["source_quality"])
+    severity = {"Critical": "긴급", "Material": "중요", "Watch": "참고"}.get(row["severity"], row["severity"])
+    review = "확인 전" if not row.get("verified_at") else "확인됨"
+    st.caption(f"{row['published_at']} · 출처 신뢰도 {quality} · {severity} · {review}")
+    url = str(row["source_url"])
+    if urlparse(url).scheme in ("http", "https"):
+        st.link_button("원문 보기", url)
 
 
-def render_news_card(row: pd.Series) -> None:
-    row = row.copy()
-    for field in ["title", "project_name", "summary", "country", "source_name", "topic", "published_at", "source_type"]:
-        row[field] = escape(str(row[field]))
-    severity = str(row["severity"]).lower()
-    label = {"Critical":"긴급", "Material":"중요", "Watch":"관찰"}.get(row["severity"], row["severity"])
-    st.markdown(
-        f'''<article class="news-card {severity}">
-        <div>{source_badge(str(row['source_quality']), str(row['source_type']))} <span class="meta">{label} · {row['published_at']}</span></div>
-        <h3>{row['project_name']} — {row['title']}</h3>
-        <p>{row['summary']}</p><div class="meta">{row['country']} · {row['source_name']} · {row['topic']}</div>
-        </article>''', unsafe_allow_html=True,
-    )
-    with st.expander("판단 맥락과 원문"):
-        st.write(row["context"] or "별도 맥락 없음")
-        st.link_button("공개 원문 보기 ↗", row["source_url"])
-
-
-if page == "경영진 대시보드":
-    header(f"해외 PPP 뉴스 MI · {period_label}", "등록된 공개 원문과 출처 품질을 한 화면에서 검토합니다.")
-    covered = september["project_id"].nunique()
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("기간 내 기사", f"{len(september)}건")
-    c2.metric("확인 사업", f"{covered}/{len(projects)}")
-    c3.metric("High 출처", f"{(september['source_quality']=='High').sum()}건")
-    c4.metric("중요·긴급", f"{september['severity'].isin(['Critical','Material']).sum()}건")
-    c5.metric("기사 미확인", f"{max(0, len(projects)-covered)}개")
-    st.markdown('<div class="notice"><b>INDICATIVE</b> — 중요도·요약·판단 맥락은 시연용 판단입니다. 기사 미확인은 사업 변화가 없다는 뜻이 아니며, 의사결정 전 원문과 담당자 검토가 필요합니다.</div>', unsafe_allow_html=True)
-
-    f1, f2, f3 = st.columns([2,1,1])
-    project_names = ["전체 사업", *projects["name"].tolist()]
-    selected_project = f1.selectbox("사업", project_names)
-    selected_severity = f2.selectbox("중요도", ["전체", "Critical", "Material", "Watch"])
-    selected_quality = f3.selectbox("출처 품질", ["전체", "High", "Medium", "Low"])
-    visible = september
-    if selected_project != "전체 사업": visible = visible[visible["project_name"] == selected_project]
-    if selected_severity != "전체": visible = visible[visible["severity"] == selected_severity]
-    if selected_quality != "전체": visible = visible[visible["source_quality"] == selected_quality]
-    st.subheader(f"선택 기간 업데이트 · {len(visible)}건")
-    for _, item in visible.iterrows():
-        render_news_card(item)
-    if visible.empty:
-        st.info("선택한 기간과 조건에 등록된 공개 원문이 없습니다.")
+if page == "대시보드":
+    header("대시보드", f"해외 사업 현황 · {period_label}")
+    active = projects[projects["active"] == 1]
+    options = {"전체 사업": None}
+    options.update({f"{r['name']} — {r['country']}": int(r['id']) for _, r in active.iterrows()})
+    left, right = st.columns([4, 1])
+    selected = left.selectbox("사업", list(options))
+    selected_id = options[selected]
+    api_key, model = secret("OPENAI_API_KEY"), secret("OPENAI_MODEL")
+    st.caption("토큰이 소모되니 필요할 때만 업데이트 하십시오")
+    update = right.button("업데이트", type="primary", disabled=not(api_key and model))
+    if not api_key or not model:
+        st.caption("업데이트 연결을 준비 중입니다.")
+    if update:
+        targets = active if selected_id is None else active[active["id"] == selected_id]
+        results = []
+        progress = st.progress(0, text="기사를 확인하고 있습니다.")
+        for i, project in enumerate(targets.to_dict("records")):
+            try:
+                result = update_project(engine, project, api_key, model, report_start, min(report_end, now_kst().date()))
+            except AuthenticationError:
+                result = "연결 인증에 실패했습니다."
+            except RateLimitError:
+                result = "사용 한도를 확인해 주세요."
+            except Exception:
+                result = "업데이트하지 못했습니다. 잠시 후 다시 시도해 주세요."
+            results.append(f"{project['name']}: {result}")
+            progress.progress((i + 1) / len(targets), text=f"{i + 1}/{len(targets)}개 사업 확인")
+        st.session_state["update_results"] = results
+        st.rerun()
+    if st.session_state.get("update_results"):
+        for result in st.session_state.pop("update_results"):
+            st.text(result)
+    quality_filter = st.selectbox("출처 신뢰도", ["전체", "높음", "보통", "낮음"])
+    quality_value = {"높음": "High", "보통": "Medium", "낮음": "Low"}.get(quality_filter)
+    shown = active if selected_id is None else active[active["id"] == selected_id]
+    st.caption(f"{len(shown)}개 사업")
+    for _, project in shown.iterrows():
+        articles = september[september["project_id"] == project["id"]]
+        if quality_value:
+            articles = articles[articles["source_quality"] == quality_value]
+        with st.container(border=True):
+            st.markdown(f"### {clean(project['name'])} — {clean(project['country'])}")
+            if articles.empty:
+                st.caption("조회 기간에 등록된 기사가 없습니다." if not quality_value else "선택한 출처 등급의 기사가 없습니다.")
+            else:
+                for _, item in articles.iterrows():
+                    render_news_card(item)
+                    if item["id"] != articles.iloc[-1]["id"]:
+                        st.divider()
 
 elif page == "브리핑 선택":
     header("CEO 브리핑 선택", "브리핑에 넣을 기사만 선택하고 CEO 장표용 CSV로 내려받습니다.")
@@ -151,8 +183,6 @@ elif page == "브리핑 선택":
 
 elif page == "사업·기사 관리":
     header("사업·기사 관리", "웹에서 관심 사업과 공개 뉴스 항목을 추가하거나 수정합니다.")
-    if not persistent:
-        st.warning("현재 로컬 SQLite 모드입니다. Streamlit Cloud 운영 배포에서는 DATABASE_URL을 연결해야 변경 내용이 영구 보존됩니다.")
     project_tab, news_tab = st.tabs(["관심 사업", "기사 등록·수정"])
     with project_tab:
         st.dataframe(projects[["id","name","country","active","news_count"]], hide_index=True, width="stretch")
@@ -181,85 +211,26 @@ elif page == "사업·기사 관리":
             source_name = st.text_input("출처명", "" if current_news is None else current_news["source_name"])
             source_url = st.text_input("공개 원문 URL", "" if current_news is None else current_news["source_url"])
             d1, d2 = st.columns(2)
-            published = d1.date_input("발행일", date.today() if current_news is None else date.fromisoformat(str(current_news["published_at"])))
+            published = d1.date_input("발행일", now_kst().date() if current_news is None else date.fromisoformat(str(current_news["published_at"])))
             event = d2.date_input("사건일", published if current_news is None else date.fromisoformat(str(current_news["event_date"] or current_news["published_at"])))
             t1, t2, t3 = st.columns(3)
             source_type = t1.selectbox("출처 유형", ["정부·발주처 공식","기업 공시","전국·산업 매체","지역·전문 매체"], index=0 if current_news is None else ["정부·발주처 공식","기업 공시","전국·산업 매체","지역·전문 매체"].index(current_news["source_type"]))
             quality = {"정부·발주처 공식":"High","기업 공시":"High","전국·산업 매체":"Medium","지역·전문 매체":"Low"}[source_type]
             topic = t2.selectbox("분류", ["사업동향","입찰·계약","금융종결","계획·인허가","공사·운영"], index=0 if current_news is None else ["사업동향","입찰·계약","금융종결","계획·인허가","공사·운영"].index(current_news["topic"]))
             severity = t3.selectbox("중요도", ["Watch","Material","Critical"], index=0 if current_news is None else ["Watch","Material","Critical"].index(current_news["severity"]))
-            context = st.text_area("판단 맥락", "" if current_news is None else current_news["context"])
+            context = st.text_area("추가 내용", "" if current_news is None else current_news["context"])
             if st.form_submit_button("기사 저장", type="primary"):
                 parsed = urlparse(source_url)
                 if not title.strip() or not summary.strip() or not source_name.strip(): st.error("제목·요약·출처명을 입력해 주세요.")
                 elif parsed.scheme not in ("http","https") or not parsed.netloc: st.error("유효한 공개 원문 URL을 입력해 주세요.")
                 else:
-                    values = {"project_id":int(projects.iloc[selected_idx]["id"]),"title":title.strip(),"summary":summary.strip(),"source_name":source_name.strip(),"source_url":source_url.strip(),"published_at":published.isoformat(),"event_date":event.isoformat(),"topic":topic,"source_type":source_type,"source_quality":quality,"severity":severity,"context":context.strip(),"verified_at":date.today().isoformat(),"approved":0 if current_news is None else int(current_news["approved"])}
+                    values = {"project_id":int(projects.iloc[selected_idx]["id"]),"title":title.strip(),"summary":summary.strip(),"source_name":source_name.strip(),"source_url":source_url.strip(),"published_at":published.isoformat(),"event_date":event.isoformat(),"topic":topic,"source_type":source_type,"source_quality":quality,"severity":severity,"context":context.strip(),"verified_at":now_kst().date().isoformat(),"approved":0 if current_news is None else int(current_news["approved"])}
                     try:
                         save_news(engine, values, None if current_news is None else int(current_news["id"]))
                     except ValueError as exc:
                         st.error(str(exc)); st.stop()
                     st.success("기사를 저장했습니다."); st.rerun()
 
-elif page == "AI 업데이트":
-    header("AI 업데이트 검토", "OpenAI Responses API의 웹 검색과 구조화 출력을 사용해 후보를 만들고, 사람이 검토한 뒤 저장합니다.")
-    api_key, model = secret("OPENAI_API_KEY"), secret("OPENAI_MODEL")
-    if not api_key or not model:
-        st.info("API는 아직 연결되지 않았습니다. Streamlit Secrets에 OPENAI_API_KEY와 OPENAI_MODEL을 등록하면 활성화됩니다. 키는 코드나 채팅에 입력하지 마세요.")
-    pidx = st.selectbox("검색할 사업", range(len(projects)), format_func=lambda i: f"{projects.iloc[i]['country']} · {projects.iloc[i]['name']}")
-    d1, d2 = st.columns(2)
-    start = d1.date_input("시작일", date.today().replace(day=1), key="ai_start")
-    end = d2.date_input("종료일", date.today(), max_value=date.today(), key="ai_end")
-    st.caption("버튼을 누를 때만 유료 검색을 실행합니다. 한 번에 선택한 사업의 최신 후보 1건을 찾습니다.")
-    if st.button("최신 공개 원문 검색", type="primary", disabled=not(api_key and model)):
-        with st.spinner("공개 원문을 검색하고 직접 연관성과 출처 품질을 판단하는 중입니다…"):
-            try:
-                st.session_state.pop("ai_candidate", None)
-                st.session_state["ai_candidate"] = collect_update(api_key=api_key, model=model, project_name=projects.iloc[pidx]["name"], country=projects.iloc[pidx]["country"], aliases=projects.iloc[pidx]["aliases"], start_date=start, end_date=end) | {"project_id":int(projects.iloc[pidx]["id"])}
-            except AuthenticationError:
-                st.error("API 키를 인증하지 못했습니다. Secrets의 OPENAI_API_KEY를 확인해 주세요.")
-            except RateLimitError:
-                st.error("API 사용 한도 또는 결제 잔액을 확인해 주세요. 잠시 후 다시 실행할 수 있습니다.")
-            except APIConnectionError:
-                st.error("API 연결이 지연되거나 실패했습니다. 잠시 후 다시 실행해 주세요.")
-            except APIStatusError:
-                st.error("API 요청이 거절되었습니다. 모델 접근 권한과 웹 검색 지원 여부를 확인해 주세요.")
-            except ValueError as exc:
-                st.error(str(exc))
-            except Exception:
-                st.error("검색 결과를 처리하지 못했습니다. 설정을 확인하고 다시 실행해 주세요.")
-    candidate = st.session_state.get("ai_candidate")
-    if candidate:
-        if not candidate.get("found"):
-            st.warning(f"직접 관련 원문 미확인: {candidate.get('reason','')}")
-        else:
-            st.subheader("검토 대기 후보")
-            st.link_button("후보 원문 열기", candidate["source_url"])
-            st.json(candidate, expanded=True)
-            st.caption("AI 결과는 자동 승인되지 않습니다. 원문 링크와 날짜를 직접 확인한 뒤 저장하세요.")
-            reviewed = st.checkbox("원문과 발행일, 해당 사업과의 관련성을 확인했습니다.", key=f"review_{candidate['project_id']}_{candidate['source_url']}")
-            if st.button("검토한 후보 저장", disabled=not reviewed):
-                values = {k:candidate[k] for k in ["project_id","title","summary","source_name","source_url","published_at","event_date","topic","source_type","source_quality","severity","context"]}
-                values |= {"verified_at":date.today().isoformat(),"approved":0}
-                try:
-                    save_news(engine, values)
-                except ValueError as exc:
-                    st.error(str(exc)); st.stop()
-                st.success("후보를 저장했습니다."); del st.session_state["ai_candidate"]; st.rerun()
-
-else:
-    header("서비스 아키텍처", "OpenAI API의 판단과 사람의 최종 승인을 분리한 Streamlit 운영 구조입니다.")
-    cols = st.columns(5)
-    stages = [("01","수집","공개 원문과 지정 기간의 기사 후보 수집"),("02","전처리","날짜·중복·사업 별칭 확인"),("03","AI 판단","중요도·경영진 영향·출처 품질 구조화"),("04","사람 승인","원문 검토 후 브리핑 선택"),("05","CEO 출력","승인 항목만 CSV·고정 슬라이드에 반영")]
-    for col, (num, title, body) in zip(cols, stages):
-        col.markdown(f'<div class="flow"><div class="eyebrow">{num}</div><h3>{title}</h3><p>{body}</p></div>', unsafe_allow_html=True)
-    st.subheader("운영 계층")
-    a,b,c = st.columns(3)
-    a.info("**DATA**\n\nPostgreSQL(Supabase/Neon) — 사업·기사·승인 상태 영구 저장")
-    b.info("**AI**\n\nOpenAI Responses API — 웹 검색·구조화 판단, 자동 승인 금지")
-    c.info("**ACCESS**\n\nStreamlit 비공개 앱 — 이메일 viewer 초대 및 GitHub 관리자 분리")
-    deck = Path(__file__).resolve().parent / "assets/CEO_Project_Intelligence_Architecture_KR.pptx"
-    if deck.exists(): st.download_button("아키텍처 PowerPoint 다운로드", deck.read_bytes(), deck.name, "application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
 st.divider()
-st.caption("CEO Project Intelligence · indicative decision support · 공개 원문과 사람의 최종 검토를 우선합니다.")
+st.caption("해외 사업 현황")

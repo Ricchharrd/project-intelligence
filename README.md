@@ -9,7 +9,7 @@
 - 17개 관심 사업과 2026년 9월 검증 기사 9건
 - 출처 품질 High / Medium / Low 분류
 - 사업·기사 웹 편집과 CEO 브리핑 선택
-- CSV 및 서비스 아키텍처 PowerPoint 다운로드
+- 사업별 대시보드와 첫 화면 업데이트, 브리핑 CSV 다운로드
 - OpenAI Responses API 웹 검색을 이용한 검토 후보 생성
 - Streamlit Community Cloud 비공개 앱의 이메일 viewer 초대
 
@@ -41,4 +41,4 @@ OPENAI_MODEL = "사용 가능한 Responses API 모델 ID"
 3. Advanced settings에서 Secrets와 Python 버전을 설정합니다.
 4. 앱을 private으로 설정하고 Sharing에서 허용 이메일을 viewer로 초대합니다.
 
-OpenAI API 결과는 자동 승인되지 않으며, 원문을 확인한 뒤 검토 대기열에 저장하도록 설계되어 있습니다.
+OpenAI API 결과는 확인 전 상태로 저장됩니다. 브리핑 반영은 담당자가 선택합니다. 매일 한국시간 00:00 예약 업데이트용 GitHub Actions 파일을 포함하며, 활성화 방법은 배포 안내에 있습니다.

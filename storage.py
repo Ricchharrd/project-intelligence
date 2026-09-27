@@ -56,6 +56,11 @@ def bootstrap(engine: Engine) -> None:
             )
         """))
         count = conn.execute(text("SELECT COUNT(*) FROM projects")).scalar_one()
+        conn.execute(text('''CREATE TABLE IF NOT EXISTS daily_runs (
+            run_date TEXT NOT NULL, project_id INTEGER NOT NULL,
+            status TEXT NOT NULL, finished_at TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (run_date, project_id)
+        )'''))
         if count == 0:
             conn.execute(
                 text("INSERT INTO projects (id,name,country) VALUES (:id,:name,:country)"),
