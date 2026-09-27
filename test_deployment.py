@@ -9,6 +9,38 @@ from storage import create_database, news_frame, projects_frame, save_news, save
 
 
 class DeploymentTests(unittest.TestCase):
+    def test_upgrade_cached_old_database(self):
+        from sqlalchemy import text
+        from storage import manual_update_remaining, claim_manual_update
+        with TemporaryDirectory() as folder:
+            engine, _ = create_database(f"sqlite:///{Path(folder) / 'old.db'}")
+            before = news_frame(engine).to_dict('records')
+            # Only this temporary test database is modified to simulate the old release.
+            with engine.begin() as conn:
+                conn.execute(text('DROP TABLE manual_update_gate'))
+            self.assertEqual(manual_update_remaining(engine, 10000), 0)
+            self.assertTrue(claim_manual_update(engine, 10000))
+            self.assertEqual(manual_update_remaining(engine, 10001), 3599)
+            self.assertEqual(manual_update_remaining(engine, 10002), 3598)
+            self.assertEqual(news_frame(engine).to_dict('records'), before)
+            engine.dispose()
+
+    def test_gate_failure_keeps_dashboard_visible(self):
+        from sqlalchemy.exc import OperationalError
+        with TemporaryDirectory() as folder:
+            engine, _ = create_database(f"sqlite:///{Path(folder) / 'error.db'}")
+            with patch('storage.create_database', return_value=(engine, True)), patch('storage.manual_update_remaining', side_effect=OperationalError('test', {}, Exception('unavailable'))):
+                app = AppTest.from_file(str(Path(__file__).parent / 'streamlit_app.py'))
+                app.secrets['OPENAI_API_KEY'] = 'test-only'
+                app.secrets['OPENAI_MODEL'] = 'test-only'
+                app.run(timeout=30)
+                self.assertFalse(app.exception)
+                self.assertTrue(next(b for b in app.button if b.label == '업데이트').disabled)
+                self.assertTrue(any(s.value == '주요 업데이트' for s in app.subheader))
+                import streamlit as st
+                st.cache_resource.clear()
+            engine.dispose()
+
     def test_storage_and_duplicate(self):
         with TemporaryDirectory() as folder:
             engine, _ = create_database(f"sqlite:///{Path(folder) / 'test.db'}")

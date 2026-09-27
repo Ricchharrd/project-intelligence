@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 import pandas as pd
 import streamlit as st
 from openai import AuthenticationError, RateLimitError, APIConnectionError, APIStatusError
+from sqlalchemy.exc import SQLAlchemyError
 
 from ai_pipeline import collect_update
 from storage import create_database, news_frame, projects_frame, save_approvals, save_news, save_project
@@ -52,14 +53,14 @@ def secret(name: str, default: str = "") -> str:
 
 
 @st.cache_resource
-def database():
+def database(schema_version=2):
     if secret("REQUIRE_DATABASE", "false").lower() == "true" and not secret("DATABASE_URL"):
         raise ValueError("DATABASE_URL required")
     return create_database(secret("DATABASE_URL") or None)
 
 
 try:
-    engine, persistent = database()
+    engine, persistent = database(schema_version=2)
 except Exception:
     st.error("데이터베이스에 연결할 수 없습니다.")
     st.info("Streamlit 설정의 Secrets에서 DATABASE_URL을 확인하고 데이터베이스가 실행 중인지 확인해 주세요.")
@@ -119,8 +120,13 @@ if page == "대시보드":
     selected_id = options[selected]
     api_key, model = secret("OPENAI_API_KEY"), secret("OPENAI_MODEL")
     st.caption("토큰이 소모되니 필요할 때만 업데이트 하십시오")
-    remaining = manual_update_remaining(engine)
-    update = right.button("업데이트", type="primary", width="stretch", disabled=not(api_key and model) or remaining > 0 or active.empty)
+    gate_available = True
+    try:
+        remaining = manual_update_remaining(engine)
+    except SQLAlchemyError:
+        gate_available, remaining = False, 0
+        st.warning("업데이트 가능 시간을 확인하지 못했습니다. 기사 조회는 계속 사용할 수 있습니다. 잠시 후 다시 시도해 주세요.")
+    update = right.button("업데이트", type="primary", width="stretch", disabled=not(api_key and model) or not gate_available or remaining > 0 or active.empty)
     if remaining:
         st.caption(f"다른 사용자의 실행을 포함해 업데이트는 1시간에 한 번 가능합니다. 약 {(remaining + 59) // 60}분 후 다시 실행할 수 있습니다.")
         if st.button("실행 가능 시간 확인"):
@@ -129,7 +135,7 @@ if page == "대시보드":
         st.caption("업데이트 연결을 준비 중입니다.")
     if update:
         st.session_state["confirm_update"] = selected
-    if st.session_state.get("confirm_update") != selected or remaining:
+    if st.session_state.get("confirm_update") != selected or remaining or not gate_available:
         st.session_state.pop("confirm_update", None)
     confirmed = False
     if st.session_state.get("confirm_update"):
@@ -144,7 +150,12 @@ if page == "대시보드":
                 st.rerun()
     if confirmed:
         st.session_state.pop("confirm_update", None)
-        if not claim_manual_update(engine):
+        try:
+            claimed = claim_manual_update(engine)
+        except SQLAlchemyError:
+            st.session_state["update_results"] = ["업데이트 가능 시간을 확인하지 못해 실행하지 않았습니다. 잠시 후 다시 시도해 주세요."]
+            st.rerun()
+        if not claimed:
             st.session_state["update_results"] = ["다른 사용자가 먼저 업데이트를 실행했습니다. 1시간 후 다시 시도해 주세요."]
             st.rerun()
         targets = active if selected_id is None else active[active["id"] == selected_id]

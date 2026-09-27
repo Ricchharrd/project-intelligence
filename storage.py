@@ -136,7 +136,20 @@ def save_approvals(engine: Engine, approvals: dict[int, bool]) -> None:
         ])
 
 
+def ensure_manual_update_gate(engine: Engine) -> None:
+    """Upgrade an already-cached connection without resetting an existing cooldown."""
+    with engine.begin() as conn:
+        if engine.dialect.name == "postgresql":
+            conn.execute(text("SELECT pg_advisory_xact_lock(8092701)"))
+        conn.execute(text('''CREATE TABLE IF NOT EXISTS manual_update_gate (
+            id INTEGER PRIMARY KEY, started_at DOUBLE PRECISION NOT NULL
+        )'''))
+        conn.execute(text('''INSERT INTO manual_update_gate (id, started_at) VALUES (1, 0)
+            ON CONFLICT (id) DO NOTHING'''))
+
+
 def manual_update_remaining(engine: Engine, now: float | None = None) -> int:
+    ensure_manual_update_gate(engine)
     now = time.time() if now is None else now
     with engine.connect() as conn:
         started = conn.execute(text("SELECT started_at FROM manual_update_gate WHERE id=1")).scalar_one()
@@ -145,6 +158,7 @@ def manual_update_remaining(engine: Engine, now: float | None = None) -> int:
 
 def claim_manual_update(engine: Engine, now: float | None = None) -> bool:
     """One atomic claim shared by every user and app instance using this DB."""
+    ensure_manual_update_gate(engine)
     now = time.time() if now is None else now
     with engine.begin() as conn:
         result = conn.execute(text('''UPDATE manual_update_gate SET started_at=:now
