@@ -22,25 +22,46 @@ st.set_page_config(page_title="CEO Project Intelligence", page_icon="📡", layo
 
 st.markdown("""
 <style>
-    :root { --navy:#0d2938; --cyan:#20a9c6; --ink:#16222d; --muted:#687781; }
-    .stApp { background:#f3f6f6; color:var(--ink); }
-    [data-testid="stSidebar"] { background:var(--navy); }
-    [data-testid="stSidebar"] * { color:#e8f2f4; }
-    [data-testid="stSidebar"] [data-testid="stRadio"] label { padding:.42rem .55rem; border-radius:.45rem; }
-    .hero { background:white; border:1px solid #dce3e6; border-radius:12px; padding:22px 26px; margin-bottom:18px; }
-    .hero h1 { margin:0; font-size:1.85rem; color:var(--ink); }
-    .hero p { color:var(--muted); margin:.45rem 0 0; }
-    .eyebrow { color:#71838c; letter-spacing:.13em; font-size:.72rem; font-weight:800; }
-    .badge { display:inline-block; padding:.2rem .55rem; border-radius:999px; font-size:.72rem; font-weight:800; }
-    .high { color:#21764d; background:#e4f3e9; } .medium { color:#956210; background:#fff0cf; } .low { color:#a6423c; background:#f9e6e4; }
-    .critical { border-left:4px solid #c9473c; } .material { border-left:4px solid #d59b32; } .watch { border-left:4px solid #6c8793; }
-    .news-card { background:white; border-top:1px solid #dce3e6; border-right:1px solid #dce3e6; border-bottom:1px solid #dce3e6; border-radius:9px; padding:16px 18px; margin:8px 0; }
-    .news-card h3 { margin:.35rem 0; font-size:1.05rem; }
-    .news-card p { margin:.25rem 0; color:#526770; line-height:1.55; }
-    .meta { color:#7b8990; font-size:.78rem; }
-    .notice { background:#fff7e6; border:1px solid #ecd59b; border-radius:8px; padding:12px 14px; color:#6f571f; margin:10px 0 18px; }
-    .flow { background:white; border:1px solid #dce3e6; border-radius:10px; padding:18px; min-height:170px; }
-    div[data-testid="stMetric"] { background:white; border:1px solid #dce3e6; padding:14px; border-radius:10px; }
+    .stApp { background:#f7f8fa; color:#202d3a; }
+    [data-testid="stMainBlockContainer"] {
+        max-width:1120px; padding-top:2.5rem; padding-bottom:3rem;
+    }
+    [data-testid="stSidebar"] {
+        background:#eef1f5; border-right:1px solid #dde3eb;
+    }
+    [data-testid="stSidebar"] h2 {
+        font-size:1.05rem; letter-spacing:-.03em; margin-bottom:1.6rem;
+    }
+    [data-testid="stSidebar"] button {
+        justify-content:flex-start; padding:.75rem 1rem; border-radius:8px;
+        box-shadow:none; min-height:46px;
+    }
+    [data-testid="stSidebar"] button[kind="secondary"] {
+        border:1px solid transparent; background:transparent; color:#526174;
+    }
+    [data-testid="stSidebar"] button[kind="secondary"]:hover {
+        background:#e2e8f0; color:#23374e;
+    }
+    [data-testid="stSidebar"] button[kind="primary"] {
+        background:#dce6f2; color:#1b3d65; border:1px solid #cbd9e9;
+    }
+    h1 { font-size:2rem !important; letter-spacing:-.04em; }
+    h2 { font-size:1.3rem !important; letter-spacing:-.025em; }
+    h3 { font-size:1.1rem !important; line-height:1.6 !important; }
+    [data-testid="stText"] { font-family:inherit; line-height:1.75; color:#384858; }
+    [data-testid="stCaptionContainer"] { color:#667588; }
+    [data-testid="stVerticalBlockBorderWrapper"] > div {
+        border-color:#e0e5ec !important; border-radius:12px !important;
+        background:#fff;
+    }
+    [data-testid="stSelectbox"] [data-baseweb="select"] > div {
+        background:#fff; border-color:#d8e0e9; border-radius:8px;
+    }
+    [data-testid="stButton"] button { min-height:40px; border-radius:8px; }
+    [data-testid="stLinkButton"] a { border-radius:7px; font-size:.85rem; }
+    @media (max-width:640px) {
+        [data-testid="stMainBlockContainer"] { padding:1.3rem 1rem; }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -66,9 +87,18 @@ except Exception:
     st.info("Streamlit 설정의 Secrets에서 DATABASE_URL을 확인하고 데이터베이스가 실행 중인지 확인해 주세요.")
     st.stop()
 
+def navigate(target):
+    st.session_state["page"] = target
+    st.session_state.pop("confirm_update", None)
+
+
+page = st.session_state.get("page", "대시보드")
 with st.sidebar:
     st.markdown("## 해외 사업 현황")
-    page = st.radio("메뉴", ["대시보드", "뉴스 기사 선택", "사업·기사 관리"], label_visibility="collapsed")
+    for label in ["대시보드", "뉴스 기사 선택", "사업·기사 관리"]:
+        st.button(label, key=f"nav_{label}", width="stretch",
+                  type="primary" if page == label else "secondary",
+                  on_click=navigate, args=(label,))
 
 
 projects = projects_frame(engine)
@@ -115,7 +145,8 @@ if page == "대시보드":
     active = projects[projects["active"] == 1]
     options = {"전체 사업 · 주요 업데이트": None}
     options.update({f"{r['name']} — {r['country']}": int(r['id']) for _, r in active.iterrows()})
-    left, right = st.columns([4, 1], vertical_alignment="bottom")
+    with st.container(width=700):
+        left, right = st.columns([4, 1.1], vertical_alignment="bottom", gap="small")
     selected = left.selectbox("사업", list(options))
     selected_id = options[selected]
     api_key, model = secret("OPENAI_API_KEY"), secret("OPENAI_MODEL")
@@ -178,7 +209,7 @@ if page == "대시보드":
     if st.session_state.get("update_results"):
         for result in st.session_state.pop("update_results"):
             st.text(result)
-    quality_filter = st.selectbox("출처 신뢰도", ["전체", "높음", "보통", "낮음"])
+    quality_filter = st.selectbox("출처 신뢰도", ["전체", "높음", "보통", "낮음"], width=220)
     quality_value = {"높음": "High", "보통": "Medium", "낮음": "Low"}.get(quality_filter)
     articles = news[news["project_id"].isin(active["id"])]
     if selected_id is None:

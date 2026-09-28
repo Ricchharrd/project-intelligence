@@ -73,8 +73,9 @@ class DeploymentTests(unittest.TestCase):
             app.secrets['OPENAI_MODEL'] = ''
             app.run(timeout=30)
             self.assertFalse(app.exception)
-            self.assertIn('대시보드', app.sidebar.radio[0].options)
-            self.assertNotIn('서비스 구조', app.sidebar.radio[0].options)
+            self.assertIn('대시보드', [b.label for b in app.sidebar.button])
+            self.assertNotIn('서비스 구조', [b.label for b in app.sidebar.button])
+            self.assertEqual(len(app.sidebar.radio), 0)
             self.assertTrue(any(b.label == '업데이트' for b in app.button))
             self.assertTrue(any('토큰이 소모되니' in c.value for c in app.caption))
             self.assertFalse(any('판단 맥락과 원문' in e.label for e in app.expander))
@@ -90,8 +91,8 @@ class DeploymentTests(unittest.TestCase):
             headlines = [s.value for s in app.subheader]
             self.assertIn(watched['title'], headlines)
             self.assertFalse(any(title in headlines for title in stored[stored['project_id'] != watched['project_id']]['title']))
-            for page in ['브리핑 선택', '사업·기사 관리']:
-                app.sidebar.radio[0].set_value(page).run(timeout=30)
+            for page in ['뉴스 기사 선택', '사업·기사 관리']:
+                next(b for b in app.sidebar.button if b.label == page).click().run(timeout=30)
                 self.assertFalse(app.exception, page)
             import streamlit as st
             st.cache_resource.clear()
