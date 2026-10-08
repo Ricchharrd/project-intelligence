@@ -45,7 +45,7 @@ class ContextTests(unittest.TestCase):
                      'title':'체코 철도 예산', 'source_url':'https://example.org/news',
                      'published_at':'2026-10-01', 'event_date':'',
                      'source_type':'정부·발주처 공식'}
-        response = SimpleNamespace(status='completed', output_text=json.dumps(candidate),
+        response = SimpleNamespace(status='completed', output_text=json.dumps({'articles':[candidate], 'reason':''}),
             model_dump=lambda: {'output':[{'type':'web_search_call', 'action':{'sources':[{'url':candidate['source_url']}]}}]})
         with patch('ai_pipeline.OpenAI') as client:
             client.return_value.responses.create.return_value=response

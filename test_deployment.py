@@ -9,6 +9,28 @@ from storage import create_database, news_frame, projects_frame, save_news, save
 
 
 class DeploymentTests(unittest.TestCase):
+    def test_password_confirmation_does_not_call_api_with_wrong_password(self):
+        from storage import claim_manual_update
+        import streamlit as st
+        with TemporaryDirectory() as folder:
+            engine, _ = create_database(f"sqlite:///{Path(folder) / 'password-ui.db'}")
+            claim_manual_update(engine)
+            with patch('storage.create_database', return_value=(engine, True)), patch('update_jobs.update_project') as updater:
+                st.cache_resource.clear()
+                app = AppTest.from_file(str(Path(__file__).parent / 'streamlit_app.py'))
+                app.secrets['OPENAI_API_KEY'] = 'test-only'
+                app.secrets['OPENAI_MODEL'] = 'test-only'
+                app.secrets['UPDATE_OVERRIDE_PASSWORD'] = 'test-secret'
+                app.run(timeout=30)
+                next(b for b in app.button if b.label == '업데이트').click().run()
+                next(t for t in app.text_input if t.label == '관리자 비밀번호').input('wrong').run()
+                next(b for b in app.button if b.label == '확인 후 실행').click().run()
+                self.assertFalse(app.exception)
+                self.assertEqual(updater.call_count, 0)
+                self.assertTrue(any('비밀번호를 확인' in t.value for t in app.text))
+                st.cache_resource.clear()
+            engine.dispose()
+
     def test_password_override_is_one_execution_only(self):
         from storage import manual_update_remaining, claim_manual_update
         with TemporaryDirectory() as folder:

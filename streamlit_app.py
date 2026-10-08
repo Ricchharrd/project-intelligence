@@ -214,6 +214,7 @@ if page == "대시보드":
     left.button("전체 주요 업데이트", on_click=clear_project_filter, width="stretch")
     api_key, model = secret("OPENAI_API_KEY"), secret("OPENAI_MODEL")
     st.caption("토큰이 소모되니 필요할 때만 업데이트 하십시오")
+    st.caption("최근 7일 · 사업별 중요 변화 최대 3건 · 일정·토지수용·본계약·재원 우선, 단순 부대공사 제외")
     gate_available = True
     try:
         remaining = manual_update_remaining(engine)
