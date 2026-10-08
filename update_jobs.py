@@ -5,6 +5,7 @@ import os
 from sqlalchemy import text
 from ai_pipeline import collect_update
 from storage import create_database, projects_frame, save_news
+from notifications import queue_alert, deliver_pending
 
 KST = timezone(timedelta(hours=9))
 
@@ -13,7 +14,7 @@ def now_kst():
     return datetime.now(KST)
 
 
-def update_project(engine, project, api_key, model, start, end):
+def update_project(engine, project, api_key, model, start, end, email_config=None):
     candidate = collect_update(api_key=api_key, model=model, project_name=project['name'],
         country=project['country'], aliases=project.get('aliases', ''), start_date=start, end_date=end)
     if not candidate.get('found'):
@@ -28,10 +29,18 @@ def update_project(engine, project, api_key, model, start, end):
         if '이미 등록' in str(exc):
             return '기존 기사'
         raise
+    try:
+        queue_alert(engine, int(project['id']), values['source_url'])
+        if email_config:
+            delivery = deliver_pending(engine, email_config)
+            if delivery['failed']:
+                return '새 기사 저장 · 이메일 발송 확인 필요'
+    except Exception:
+        return '새 기사 저장 · 이메일 처리 확인 필요'
     return '새 기사 저장'
 
 
-def run_daily(engine, api_key, model, clock=None):
+def run_daily(engine, api_key, model, clock=None, email_config=None):
     clock = clock or now_kst()
     end = clock.date() - timedelta(days=1)
     start = end - timedelta(days=6)
@@ -47,7 +56,7 @@ def run_daily(engine, api_key, model, clock=None):
         if not claimed:
             continue
         try:
-            status = update_project(engine, project, api_key, model, start, end)
+            status = update_project(engine, project, api_key, model, start, end, email_config=email_config)
         except Exception:
             status = '업데이트 실패'
             failures += 1
@@ -68,6 +77,8 @@ if __name__ == '__main__':
         raise SystemExit('Scheduled updates require shared PostgreSQL storage')
     db, _ = create_database(os.environ['DATABASE_URL'])
     try:
-        raise SystemExit(1 if run_daily(db, os.environ['OPENAI_API_KEY'], os.environ['OPENAI_MODEL']) else 0)
+        failures = run_daily(db, os.environ['OPENAI_API_KEY'], os.environ['OPENAI_MODEL'], email_config=os.environ)
+        delivery = deliver_pending(db, os.environ)
+        raise SystemExit(1 if failures or delivery['failed'] else 0)
     finally:
         db.dispose()

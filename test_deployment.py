@@ -9,6 +9,19 @@ from storage import create_database, news_frame, projects_frame, save_news, save
 
 
 class DeploymentTests(unittest.TestCase):
+    def test_password_override_is_one_execution_only(self):
+        from storage import manual_update_remaining, claim_manual_update
+        with TemporaryDirectory() as folder:
+            engine, _ = create_database(f"sqlite:///{Path(folder) / 'gate.db'}")
+            self.assertTrue(claim_manual_update(engine, 10000))
+            self.assertFalse(claim_manual_update(engine, 10001))
+            self.assertFalse(claim_manual_update(engine, 10002, override_password='wrong', configured_password='test-secret'))
+            self.assertFalse(claim_manual_update(engine, 10003, override_password='', configured_password=''))
+            self.assertTrue(claim_manual_update(engine, 10004, override_password='test-secret', configured_password='test-secret'))
+            self.assertEqual(manual_update_remaining(engine, 10005), 3599)
+            self.assertFalse(claim_manual_update(engine, 10005))
+            engine.dispose()
+
     def test_upgrade_cached_old_database(self):
         from sqlalchemy import text
         from storage import manual_update_remaining, claim_manual_update
@@ -87,10 +100,19 @@ class DeploymentTests(unittest.TestCase):
             self.assertFalse(any(title in headlines for title in stored[stored['severity'] == 'Watch']['title']))
             # Selecting a project shows its Watch articles as well, and no other projects.
             watched = stored[stored['severity'] == 'Watch'].iloc[0]
-            app.selectbox[0].select(f"{watched['project_name']} — {watched['country']}").run()
+            app.session_state['project_filter'] = [int(watched['project_id'])]
+            app.run()
             headlines = [s.value for s in app.subheader]
             self.assertIn(watched['title'], headlines)
             self.assertFalse(any(title in headlines for title in stored[stored['project_id'] != watched['project_id']]['title']))
+            ids = [int(pid) for pid in stored['project_id'].unique()[:2]]
+            app.session_state['project_filter'] = ids
+            app.run()
+            headlines = [s.value for s in app.subheader]
+            self.assertTrue(all(title in headlines for title in stored[stored['project_id'].isin(ids)]['title']))
+            self.assertFalse(any(title in headlines for title in stored[~stored['project_id'].isin(ids)]['title']))
+            next(b for b in app.button if b.label == '전체 주요 업데이트').click().run()
+            self.assertEqual(app.session_state['project_filter'], [])
             for page in ['뉴스 기사 선택', '사업·기사 관리']:
                 next(b for b in app.sidebar.button if b.label == page).click().run(timeout=30)
                 self.assertFalse(app.exception, page)
@@ -126,12 +148,14 @@ class DeploymentTests(unittest.TestCase):
                 app.run(timeout=30)
                 self.assertTrue(any(t.value == '본문 테스트' for t in app.text))
                 self.assertFalse(any('<p>' in t.value for t in app.text))
-                app.selectbox[0].select_index(1).run()
+                app.session_state['project_filter'] = [1003, 1016]
+                app.run()
                 next(b for b in app.button if b.label == '업데이트').click().run(timeout=30)
                 self.assertEqual(updater.call_count, 0)
                 next(b for b in app.button if b.label == '확인 후 실행').click().run(timeout=30)
                 self.assertFalse(app.exception)
-                self.assertEqual(updater.call_count, 1)
+                self.assertEqual(updater.call_count, 2)
+                self.assertEqual({int(call.args[1]['id']) for call in updater.call_args_list}, {1003, 1016})
                 self.assertTrue(next(b for b in app.button if b.label == '업데이트').disabled)
                 import streamlit as st
                 st.cache_resource.clear()

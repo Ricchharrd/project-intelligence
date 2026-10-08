@@ -9,6 +9,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 from seed_data import NEWS, PROJECTS
+from project_scope import migrate_moravia
 
 
 def create_database(database_url: str | None) -> tuple[Engine, bool]:
@@ -21,6 +22,7 @@ def create_database(database_url: str | None) -> tuple[Engine, bool]:
         database_url = "postgresql+psycopg://" + database_url.split("://", 1)[1]
     engine = create_engine(database_url, pool_pre_ping=True)
     bootstrap(engine)
+    migrate_moravia(engine)
     return engine, persistent
 
 
@@ -156,11 +158,13 @@ def manual_update_remaining(engine: Engine, now: float | None = None) -> int:
     return max(0, int(started + 3600 - now + 0.999))
 
 
-def claim_manual_update(engine: Engine, now: float | None = None) -> bool:
+def claim_manual_update(engine: Engine, now: float | None = None, *, override_password: str = '', configured_password: str = '') -> bool:
     """One atomic claim shared by every user and app instance using this DB."""
     ensure_manual_update_gate(engine)
     now = time.time() if now is None else now
+    import hmac
+    override = bool(configured_password) and hmac.compare_digest(override_password.encode(), configured_password.encode())
     with engine.begin() as conn:
         result = conn.execute(text('''UPDATE manual_update_gate SET started_at=:now
-            WHERE id=1 AND started_at <= :cutoff'''), {'now': now, 'cutoff': now - 3600})
+            WHERE id=1 AND (started_at <= :cutoff OR :override)'''), {'now': now, 'cutoff': now - 3600, 'override': override})
         return result.rowcount == 1
