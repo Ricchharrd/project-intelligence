@@ -85,12 +85,19 @@ class ContextTests(unittest.TestCase):
                 app.run(timeout=30)
                 self.assertFalse(app.exception)
                 self.assertTrue(any(t.value.startswith('출처: ') for t in app.text))
-                self.assertTrue(any(h.value=='국가별 정치 일정' for h in app.subheader))
+                self.assertFalse(any(h.value=='국가별 정치 일정' for h in app.subheader))
                 app.session_state['project_filter']=[1012,1013]
                 app.run(timeout=30)
                 self.assertFalse(app.exception)
                 self.assertEqual(sum(m.value.startswith('**뉴질랜드 · 총선') for m in app.markdown),1)
                 self.assertFalse(any('체코 · 지방의회' in m.value for m in app.markdown))
+                next(b for b in app.sidebar.button if b.label=='정치 대시보드').click().run(timeout=30)
+                self.assertTrue(any(h.value=='정치 대시보드' for h in app.title))
+                self.assertTrue(any(h.value=='국가별 정치 일정' for h in app.subheader))
+                app.session_state['politics_countries']=['체코']
+                app.run(timeout=30)
+                self.assertTrue(any('**체코 ·' in m.value for m in app.markdown))
+                self.assertFalse(any('**뉴질랜드 ·' in m.value for m in app.markdown))
                 st.cache_resource.clear()
             engine.dispose()
 

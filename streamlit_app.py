@@ -20,6 +20,7 @@ from notifications import get_alert, save_alert, smtp_ready, alert_status
 from political_events import events_for_countries
 from project_scope import visible_news, is_moravia_project
 from manual_jobs import job_state, start_job
+from weekly_updates import preferences as weekly_preferences, set_preference
 
 
 st.set_page_config(page_title="CEO Project Intelligence", page_icon="📡", layout="wide", initial_sidebar_state="expanded")
@@ -109,7 +110,7 @@ def navigate(target):
 page = st.session_state.get("page", "대시보드")
 with st.sidebar:
     st.markdown("## 해외 사업 현황")
-    for label in ["대시보드", "뉴스 기사 선택", "사업·기사 관리"]:
+    for label in ["대시보드", "정치 대시보드", "뉴스 기사 선택", "사업·기사 관리"]:
         st.button(label, key=f"nav_{label}", width="stretch",
                   type="primary" if page == label else "secondary",
                   on_click=navigate, args=(label,))
@@ -205,8 +206,9 @@ if page == "대시보드":
     selected_ids = selected_ids or []
     selected = " / ".join(labels[pid] for pid in selected_ids) if selected_ids else "전체 사업"
     st.caption("여러 사업을 함께 선택할 수 있습니다. 선택한 버튼을 다시 누르면 해제됩니다.")
-    calendar_projects = active if not selected_ids else active[active['id'].isin(selected_ids)]
-    render_political_calendar(tuple(sorted(calendar_projects['country'].unique())))
+    calendar_projects = active[active['id'].isin(selected_ids)]
+    if selected_ids:
+        render_political_calendar(tuple(sorted(calendar_projects['country'].unique())))
     if any(is_moravia_project(r['name'], r['country']) for r in calendar_projects.to_dict('records')):
         st.caption('체코 검색 범위: Moravia Gate (VRT Moravská brána). 기존 전국 단위 기사는 관리 페이지에 보존됩니다.')
     with st.container(width=420):
@@ -309,6 +311,13 @@ if page == "대시보드":
                         + escape(clean(item['project_name'])) + '</span></div>', unsafe_allow_html=True)
             render_news_card(item)
 
+elif page == "정치 대시보드":
+    header("정치 대시보드", "국가별 주요 정치 일정과 출처를 확인합니다.")
+    st.caption("현재는 등록된 선거 일정입니다. 정치 뉴스 실시간 수집 기능은 아직 연결되지 않았습니다.")
+    country_options = sorted(projects[projects['active']==1]['country'].unique())
+    countries = st.pills('국가 선택',country_options,selection_mode='multi',key='politics_countries')
+    render_political_calendar(tuple(countries or country_options))
+
 elif page == "뉴스 기사 선택":
     header("뉴스 기사 선택", "기사를 선택 후 CSV 형태로 다운로드 받습니다")
     edit = visible_news(news)[["id","approved","project_name","title","published_at","source_name","source_url","source_quality","severity"]].copy()
@@ -350,6 +359,17 @@ elif page == "사업·기사 관리":
                     save_project(engine, {"name":name.strip(),"country":country.strip(),"aliases":aliases.strip(),"active":1 if active else 0}, None if current is None else int(current["id"]))
                     st.success("사업을 저장했습니다."); st.rerun()
         if current is not None:
+            st.subheader("주간 자동 업데이트")
+            st.caption("매주 월요일 오전 6시(KST) · 선택한 주요 사업만 최근 7일 검색 · 사업별 최대 3건")
+            if not secret('DATABASE_URL').startswith(('postgres://','postgresql://','postgresql+psycopg://')):
+                st.warning("자동 실행 연결 전입니다. 공용 데이터베이스와 GitHub 예약 작업 설정이 필요합니다. 대상 선택은 저장할 수 있습니다.")
+            else:
+                st.caption("실제 예약 실행 상태와 실패 내역은 GitHub Actions에서 확인하세요.")
+            with st.form('weekly_preferences'):
+                weekly_enabled = st.checkbox('이 사업을 주간 자동 업데이트에 포함',value=weekly_preferences(engine).get(int(current['id']),False))
+                if st.form_submit_button('주간 설정 저장'):
+                    set_preference(engine,int(current['id']),weekly_enabled)
+                    st.success('주간 대상 설정을 저장했습니다.')
             st.subheader("담당자 이메일 알림")
             st.caption("알림을 켠 사업의 중요·긴급 새 기사만 담당자에게 보냅니다. 기존 기사는 다시 보내지 않습니다.")
             if not smtp_ready(email_settings()):

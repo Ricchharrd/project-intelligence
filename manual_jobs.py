@@ -20,7 +20,7 @@ def job_state(engine):
     return row
 
 
-def start_job(engine, targets, collect, *, override_password='', configured_password=''):
+def start_job(engine, targets, collect, *, override_password='', configured_password='', background=True):
     job_state(engine)
     token = uuid.uuid4().hex
     with engine.begin() as conn:
@@ -32,6 +32,9 @@ def start_job(engine, targets, collect, *, override_password='', configured_pass
     try:
         if not claim_manual_update(engine, override_password=override_password, configured_password=configured_password):
             return False
+        if not background:
+            _run(engine, token, targets, collect)
+            return True
         worker = threading.Thread(target=_run, args=(engine, token, targets, collect), daemon=True)
         worker.start()
         return True
